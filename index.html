@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>No pares el cursor</title>
+<style>
+html,body{margin:0;height:100%;background:#0d0b1e;overflow:hidden;font-family:system-ui,sans-serif;color:#fff;touch-action:none;-webkit-user-select:none;user-select:none}
+canvas{display:block;width:100%;height:100%}
+#ui{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;background:rgba(13,11,30,.85);gap:12px}
+#ui.h{display:none}
+h1{margin:0;font-size:2.1rem}
+p{margin:0;max-width:320px;line-height:1.45;opacity:.9}
+button,a{font:inherit;font-weight:700;border:0;border-radius:30px;padding:12px 26px;background:#ffd23f;color:#222;text-decoration:none;cursor:pointer}
+#sh{background:#5eead4;display:none}
+.row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:8px}
+.row a{background:#2b2750;color:#fff;font-size:.85rem;padding:8px 14px}
+button:focus-visible,a:focus-visible{outline:3px solid #fff}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1 id="t">No pares el cursor</h1>
+<p id="m">Mueve el dedo o el mouse sin parar y tu criatura te seguirá. Si te detienes, pierdes una vida. Esquiva lo rojo y los muros, y atrapa ⏳ (−3 s), ⭐ (+100) y 💖 (+1 vida).</p>
+<button id="go">Jugar</button>
+<button id="sh">Compartir</button>
+<div class="row">
+<a href="https://wafflefun.github.io/gusanoloco/">El Gusano</a>
+<a href="https://wafflefun.github.io/tucaos/">Tu nivel de caos</a>
+<a href="https://wafflefun.github.io/monstruo/">Crea tu monstruo</a>
+</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('c'),x=cv.getContext('2d'),ui=$('ui');
+let W,H,D;
+function rs(){D=devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*D;cv.height=H*D;x.setTransform(D,0,0,D,0,0)}
+addEventListener('resize',rs);rs();
+const R=18,GR=1.2,rm=matchMedia('(prefers-reduced-motion:reduce)').matches;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+let best=0;try{best=+localStorage.getItem('npc_best')||0}catch(e){}
+let st='menu',stage=1,score=0,lives=3,rem=10,dur=10,cr={x:0,y:0},tx=0,ty=0,px=0,py=0,lm=0,inv=0,shake=0,blocks=[],pick=[],parts=[],trail=[],clr=0,t=0,sp=2,corr=false;
+
+addEventListener('pointermove',e=>{tx=e.clientX;ty=e.clientY;if(Math.hypot(tx-px,ty-py)>2)lm=t;px=tx;py=ty});
+addEventListener('pointerdown',e=>{tx=px=e.clientX;ty=py=e.clientY});
+
+function gap(){const p=1-rem/dur,e=Math.min(1,(dur-rem)/1.5);return{c:H/2+Math.sin(t*1.3)*H*.12,g:Math.max(130,H*(.6-.3*p))+(1-e)*H}}
+function burst(a,b,n,c){for(let i=0;i<n;i++)parts.push({x:a,y:b,vx:rnd(-220,220),vy:rnd(-220,220),l:.8,c:c||`hsl(${rnd(0,360)},90%,60%)`})}
+function txt(s,a,b){parts.push({x:a,y:b,vx:0,vy:-45,l:1,s})}
+
+function start(){stage=1;score=0;lives=3;cr={x:W/2,y:H/2};tx=px=W/2;ty=py=H/2;trail=[];parts=[];ui.classList.add('h');$('sh').style.display='none';initStage();st='play'}
+function initStage(){
+  dur=10+5*(stage-1);rem=dur;inv=1;lm=t;pick=[];sp=2;blocks=[];
+  corr=stage>=3&&stage%2==1;
+  let n=stage==1?0:Math.min(stage,6);if(corr)n=Math.max(0,Math.min(stage-3,6));
+  for(let i=0;i<n;i++){
+    const w=rnd(50,90),h=rnd(40,80);let bx,by;
+    do{bx=rnd(0,W-w);by=rnd(0,H-h)}while(Math.hypot(bx-cr.x,by-cr.y)<170);
+    const v=60+stage*12;
+    blocks.push({x:bx,y:by,w,h,vx:(Math.random()<.5?-1:1)*rnd(v*.6,v),vy:(Math.random()<.5?-1:1)*rnd(v*.6,v)});
+  }
+}
+function hurt(f){if(inv>0&&!f)return;lives--;inv=1.5;shake=rm?0:.35;burst(cr.x,cr.y,14,'#ff5d73');if(lives<=0)over()}
+function over(){
+  if(st=='over')return;st='over';
+  if(score>best){best=score;try{localStorage.setItem('npc_best',best)}catch(e){}}
+  $('t').textContent='¡Fin del juego!';
+  $('m').textContent=`Etapa ${stage} · ${score} puntos · Récord: ${best}`;
+  $('go').textContent='Reintentar';$('sh').style.display='inline-block';ui.classList.remove('h');
+}
+function clearStage(){score+=1000;st='clear';clr=1.6;blocks=[];pick=[];corr=false;burst(W/2,H/2,40)}
+
+function upd(dt){
+  t+=dt;
+  for(const p of parts){p.x+=p.vx*dt;p.y+=p.vy*dt;p.l-=dt}
+  parts=parts.filter(p=>p.l>0);
+  if(st=='menu'||st=='over')return;
+  const k=Math.min(1,dt*9);cr.x+=(tx-cr.x)*k;cr.y+=(ty-cr.y)*k;
+  trail.push({x:cr.x,y:cr.y});if(trail.length>14)trail.shift();
+  inv=Math.max(0,inv-dt);shake=Math.max(0,shake-dt);
+  if(st=='clear'){clr-=dt;if(clr<=0){stage++;initStage();st='play'}return}
+  rem-=dt;
+  if(rem<=0){clearStage();return}
+  if(t-lm>GR){hurt(true);lm=t;if(st!='play')return}
+  for(const b of blocks){
+    b.x+=b.vx*dt;b.y+=b.vy*dt;
+    if(b.x<0||b.x+b.w>W)b.vx*=-1;if(b.y<0||b.y+b.h>H)b.vy*=-1;
+    b.x=Math.max(0,Math.min(W-b.w,b.x));b.y=Math.max(0,Math.min(H-b.h,b.y));
+    const nx=Math.max(b.x,Math.min(cr.x,b.x+b.w)),ny=Math.max(b.y,Math.min(cr.y,b.y+b.h));
+    if(Math.hypot(cr.x-nx,cr.y-ny)<R-3)hurt();
+  }
+  if(st!='play')return;
+  if(corr){const q=gap();if(cr.y-R+4<q.c-q.g/2||cr.y+R-4>q.c+q.g/2)hurt()}
+  if(st!='play')return;
+  sp-=dt;
+  if(sp<=0){
+    sp=rnd(2.5,4.5);const r=Math.random();
+    const kind=r<.6?'⏳':(r<.88||lives>=3)?'⭐':'💖';
+    let y=rnd(60,H-60);if(corr){const q=gap();y=q.c+rnd(-.5,.5)*(q.g-80)}
+    pick.push({x:rnd(40,W-40),y,k:kind,l:7});
+  }
+  for(const p of pick){
+    p.l-=dt;
+    if(Math.hypot(cr.x-p.x,cr.y-p.y)<R+18){
+      p.l=0;
+      if(p.k=='⏳'){rem=Math.max(.5,rem-3);txt('−3 s',p.x,p.y)}
+      else if(p.k=='⭐'){score+=100;txt('+100',p.x,p.y)}
+      else{lives++;txt('+1 ❤',p.x,p.y)}
+      burst(p.x,p.y,8,'#ffd23f');
+    }
+  }
+  pick=pick.filter(p=>p.l>0);
+}
+
+function draw(){
+  x.clearRect(0,0,W,H);x.fillStyle='#0d0b1e';x.fillRect(0,0,W,H);
+  if(st=='menu')return;
+  x.save();
+  if(shake>0)x.translate(rnd(-6,6)*shake*3,rnd(-6,6)*shake*3);
+  if(corr){const q=gap();x.fillStyle='#7a5cff';x.fillRect(0,0,W,q.c-q.g/2);x.fillRect(0,q.c+q.g/2,W,H)}
+  x.fillStyle='#ff5d73';
+  for(const b of blocks){x.beginPath();x.roundRect(b.x,b.y,b.w,b.h,8);x.fill()}
+  x.font='28px serif';x.textAlign='center';x.textBaseline='middle';
+  for(const p of pick)if(p.l>1.5||Math.floor(t*10)%2)x.fillText(p.k,p.x,p.y+Math.sin(t*5)*3);
+  const hu=(stage*47)%360;
+  trail.forEach((p,i)=>{x.globalAlpha=i/trail.length*.4;x.fillStyle=`hsl(${hu},85%,60%)`;x.beginPath();x.arc(p.x,p.y,R*i/trail.length,0,7);x.fill()});
+  x.globalAlpha=1;
+  const wr=st=='play'&&t-lm>.6;
+  if(!(inv>0&&Math.floor(t*14)%2)){
+    x.fillStyle=`hsl(${hu},85%,60%)`;x.beginPath();x.arc(cr.x,cr.y,R,0,7);x.fill();
+    const a=Math.atan2(ty-cr.y,tx-cr.x),jx=wr?rnd(-1,1):0;
+    for(const s of[-7,7]){
+      x.fillStyle='#fff';x.beginPath();x.arc(cr.x+s,cr.y-4,wr?6:5,0,7);x.fill();
+      x.fillStyle='#222';x.beginPath();x.arc(cr.x+s+Math.cos(a)*2+jx,cr.y-4+Math.sin(a)*2,2.5,0,7);x.fill();
+    }
+    x.strokeStyle='#222';x.lineWidth=2;x.beginPath();
+    if(wr)x.arc(cr.x,cr.y+9,3,0,7);else x.arc(cr.x,cr.y+3,7,.2,Math.PI-.2);
+    x.stroke();
+  }
+  for(const p of parts){
+    x.globalAlpha=Math.min(1,p.l);
+    if(p.s){x.fillStyle='#fff';x.font='bold 18px system-ui';x.fillText(p.s,p.x,p.y)}
+    else{x.fillStyle=p.c;x.fillRect(p.x-3,p.y-3,6,6)}
+  }
+  x.globalAlpha=1;x.restore();
+  x.fillStyle='#2b2750';x.fillRect(0,0,W,8);
+  x.fillStyle='#ffd23f';x.fillRect(0,0,W*(1-rem/dur),8);
+  const s=st=='play'?Math.min(1,(t-lm)/GR):0;
+  x.fillStyle=s>.5?'#ff5d73':'#5eead4';x.fillRect(0,10,W*(1-s),4);
+  x.font='bold 16px system-ui';x.fillStyle='#fff';
+  x.textAlign='left';x.fillText('Etapa '+stage,14,34);
+  x.textAlign='center';x.fillText('❤'.repeat(Math.max(0,lives)),W/2,34);
+  x.textAlign='right';x.fillText(score+' pts',W-14,34);
+  x.textAlign='center';
+  if(s>.5){x.font='bold 30px system-ui';x.fillStyle='#ff5d73';x.fillText('¡MUEVE!',W/2,H*.2)}
+  if(st=='clear'){x.font='bold 28px system-ui';x.fillStyle='#ffd23f';x.fillText('¡Etapa '+stage+' superada!',W/2,H*.4);x.font='bold 22px system-ui';x.fillText('+1000',W/2,H*.4+34)}
+}
+
+$('go').onclick=start;
+$('sh').onclick=()=>{
+  const s=`Llegué a la etapa ${stage} con ${score} puntos en "No pares el cursor". ¿Me superas? ${location.href}`;
+  if(navigator.share)navigator.share({text:s}).catch(()=>{});
+  else if(navigator.clipboard)navigator.clipboard.writeText(s);
+};
+let last=0;
+function f(ts){const dt=Math.min(.05,(ts-last)/1000||0);last=ts;upd(dt);draw();requestAnimationFrame(f)}
+requestAnimationFrame(f);
+</script></body></html>
